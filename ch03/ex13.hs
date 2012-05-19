@@ -1,13 +1,11 @@
--- Graham scan algorithm:
--- Find a convex hull in a finite set of points
+-- Graham scan algorithm for finding a convex hull in a finite set of points
 -- http://en.wikipedia.org/wiki/Graham_scan
 -- For alternative method, see:
 -- http://www.algorithmist.com/index.php/Monotone_Chain_Convex_Hull
--- sort a set of points lexicographically, first by x-coordinate, 
--- and in case of a tie, by y-coordinate
--- Also an a fast method described in CRLS.
+-- (sorts a set of points lexicographically)
+-- CRLS has a very good exposition of Graham scan in Ch. 33.
 
-import Data.List (sortBy, nub, minimumBy)
+import Data.List (and, nub, sort, sortBy, minimumBy)
 
 -- note that data constructors have to start with capital letters
 data Direction = Left_ | Right_ | Straight_ deriving (Eq, Show)
@@ -89,17 +87,16 @@ descCompareCosX  pStart = compareCosX
 
 -- sorting using cosines here, but we could also sort using atan2() function
 --  for example to find polar angle.
-myPivotSort xs = pStart:(sortBy (descCompareCosX pStart) cleanInput)
-    where uniqueList = nub xs
-          pStart     = findP uniqueList
-          cleanInput = [x | x <- uniqueList, x /= pStart]
+pivotSort xs =
+    let p = findP xs
+    in nub (p:(sortBy (descCompareCosX p) xs))
 
 -- This is the core of the algorithm
 grahamScan :: [Point2D] -> [Point2D]
 grahamScan []     = []
 grahamScan [p]    = [p]
-grahamScan xs = 
-    let (x:y:zs) = myPivotSort xs
+grahamScan xs =
+    let (x:y:zs) = pivotSort xs
     in myGrahamScan [y,x] zs
     where myGrahamScan :: [Point2D] -> [Point2D] -> [Point2D]
           myGrahamScan (q:r:rs) (p:ps)
@@ -129,11 +126,37 @@ printTuples (t:ts) = (show (fst t)) ++ "\t" ++ (show (snd t)) ++ "\n" ++ (printT
 
 
 -- TEST CASES -------------------------------------------
-testCase1 = t2p [(10,0), (10,1),(-10,1),(-10,0),(-7,0),(-10,2),(-10,3),(-4,1),(-2,2),(-12,1)]
--- expected answer: [(-12,1),(-10,3),(10,1),(10,0),(-10,0)]
+-- A list of tuples where first elemtn is input, and second is expected output
+testCases =
+    [([],[]),
 
-testCase2 = t2p [(-3,7),(-2,6),(-1,4),(0,1),(0,0),(1,4),(2,6),(3,7)]
--- expected answer: [(-3,7),(3,7),(0,0)]
+     ([(1,1)],
+      [(1,1)]),
 
-testCase3 = t2p [(-3,1),(-4,1),(-1,4),(0,0),(2,2),(-1,3),(-1,2),(1,0),(3,-1),(-1,-1)]
--- expected answer: [(-4,1),(-1,4),(2,2),(3,-1),(-1,-1)]
+     ([(-1,0),(1,1)],
+      [(-1,0),(1,1)]),
+
+     ([(-1,0),(1,1),(2,3)],
+      [(-1,0),(1,1),(2,3)]),
+
+     ([(10,0), (10,1),(-10,1),(-10,0),(-7,0),(-10,2),(-10,3),(-4,1),(-2,2),(-12,1)],
+      [(-12,1),(-10,3),(10,1),(10,0),(-10,0)]),
+
+     ([(-3,7),(-2,6),(-1,4),(0,1),(0,0),(1,4),(2,6),(3,7)],
+      [(-3,7),(3,7),(0,0)]),
+
+     ([(-3,1),(-4,1),(-1,4),(0,0),(2,2),(-1,3),(-1,2),(1,0),(3,-1),(-1,-1)],
+      [(-4,1),(-1,4),(2,2),(3,-1),(-1,-1)])]
+
+runTests = checkTestCases testCases
+    where checkTestCases []     = []
+          checkTestCases (x:xs) =
+            (assertSameList expected actual):(checkTestCases xs)
+            where expected         = snd x
+                  actual           = grahamScanTuples (fst x)
+                  grahamScanTuples = p2t . grahamScan . t2p
+                  assertSameList exp act
+                    | (sort exp) == (sort act) = "Passed"
+                    | otherwise                =
+                        let str = "Expected:\n" ++ (printTuples exp) ++ "\nActual:\n" ++ (printTuples act)
+                        in error str
