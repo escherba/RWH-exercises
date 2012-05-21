@@ -8,12 +8,8 @@
 import Data.List (and, nub, sort, sortBy, minimumBy)
 
 -- note that data constructors have to start with capital letters
-data Direction = Left_ | Right_ | Straight_ deriving (Eq, Show)
-
-data Point2D = Point2D {
-    x :: Double,
-    y :: Double
-} deriving (Eq, Show)
+data Direction = Left_ | Right_ | Straight_ deriving (Eq)
+data Point2D = Point2D { x, y :: Double } deriving (Eq, Show)
 
 -- get direction of turn formed by three points going from p1 to p2 to p3
 -- Do this by obtaining sign of the crossproduct of vectors (p1, p2) and
@@ -97,17 +93,17 @@ grahamScan []     = []
 grahamScan [p]    = [p]
 grahamScan xs =
     let (x:y:zs) = pivotSort xs
-    in myGrahamScan [y,x] zs
-    where myGrahamScan :: [Point2D] -> [Point2D] -> [Point2D]
-          myGrahamScan (q:r:rs) (p:ps)
-            | myDir == Left_  = myGrahamScan (p:q:r:rs) ps
+    in scanWith [y,x] zs
+    where scanWith :: [Point2D] -> [Point2D] -> [Point2D]
+          scanWith (q:r:rs) (p:ps)
+            | myDir == Left_  = scanWith (p:q:r:rs) ps
             -- backtrack by one element
-            | myDir == Right_ = myGrahamScan (r:rs) (p:ps)
+            | myDir == Right_ = scanWith (r:rs) (p:ps)
             -- between q and r, choose the point that is furthest from p
-            | otherwise = myGrahamScan ((furthest [p, q]):r:rs) ps
+            | otherwise = scanWith ((furthest [p, q]):r:rs) ps
             where myDir    = direction r q p
                   furthest = minimumBy (descCompareDist r)
-          myGrahamScan done _  = done
+          scanWith done _  = done
 
 
 -- convert tuple to Point2D
