@@ -5,7 +5,7 @@
 -- (sorts a set of points lexicographically)
 -- CRLS has a very good exposition of Graham scan in Ch. 33.
 
-import Data.List (and, nub, sort, sortBy, minimumBy)
+import Data.List (nub, sort, sortBy, minimumBy)
 
 -- note that data constructors have to start with capital letters
 data Direction = Left_ | Right_ | Straight_ deriving (Eq)
@@ -28,7 +28,7 @@ direction p1 p2 p3
 -- triple. Given a list of points [a,b,c,d,e], it should begin by computing the
 -- turn made by [a,b,c], then the turn made by [b,c,d], then [c,d,e].
 directions :: [Point2D] -> [Direction]
-directions (p:q:r:ss) = (direction p q r) : (directions (q:r:ss))
+directions (p:q:r:ss) = direction p q r : directions (q:r:ss)
 directions _ = []
 
 
@@ -39,7 +39,7 @@ distance p1 p2 = sqrt ((x p2 - x p1) ^ 2 + (y p2 - y p1) ^ 2)
 
 -- get cosine of two points with respect to X axis
 cosX :: Point2D -> Point2D -> Double
-cosX p1 p2 = (x p2 - x p1) / (distance p1 p2)
+cosX p1 p2 = (x p2 - x p1) / distance p1 p2
 
 -- find the point with the lowest y-coordinate. If the lowest y-coordinate
 -- exists in more than one point, choose point with the lowest x-coordinate
@@ -51,13 +51,9 @@ lowestYX p1 p2
     where y1 = y p1
           y2 = y p2
 
--- call the point with the lowest coordinate P
-findP :: [Point2D] -> Point2D
-findP ps = minimumBy lowestYX ps
-
 -- helper function to sort/pick points by their distance from pStart (larger is
 -- better)
-descCompareDist :: Point2D -> (Point2D -> Point2D -> Ordering)
+descCompareDist :: Point2D -> Point2D -> Point2D -> Ordering
 descCompareDist pStart = compareDist
     where compareDist :: Point2D -> Point2D -> Ordering
           compareDist pA pB
@@ -70,37 +66,38 @@ descCompareDist pStart = compareDist
 
 -- helper function to sort/pick points by their cosine relative to pStart and to
 -- the X axis (larger cosine is better)
-descCompareCosX :: Point2D -> (Point2D -> Point2D -> Ordering)
+descCompareCosX :: Point2D -> Point2D -> Point2D -> Ordering
 descCompareCosX  pStart = compareCosX
     where compareCosX :: Point2D -> Point2D -> Ordering
           compareCosX pA pB
             | cosA > cosB = LT
             | cosA < cosB = GT
-            | otherwise   = (descCompareDist pStart) pA pB
+            | otherwise   = descCompareDist pStart pA pB
             where cosA  = cosXP pA
                   cosB  = cosXP pB
                   cosXP = cosX pStart
 
 -- sorting using cosines here, but we could also sort using atan2() function
 --  for example to find polar angle.
+pivotSort :: [Point2D] -> [Point2D]
 pivotSort xs =
-    let p = findP xs
-    in nub (p:(sortBy (descCompareCosX p) xs))
+    let p = minimumBy lowestYX xs
+    in nub (p:sortBy (descCompareCosX p) xs)
 
 -- This is the core of the algorithm
 grahamScan :: [Point2D] -> [Point2D]
 grahamScan []     = []
 grahamScan [p]    = [p]
 grahamScan xs =
-    let (x:y:zs) = pivotSort xs
-    in scanWith [y,x] zs
+    let (pStart:rStart:zs) = pivotSort xs
+    in scanWith [rStart,pStart] zs
     where scanWith :: [Point2D] -> [Point2D] -> [Point2D]
           scanWith (q:r:rs) (p:ps)
             | myDir == Left_  = scanWith (p:q:r:rs) ps
             -- backtrack by one element
             | myDir == Right_ = scanWith (r:rs) (p:ps)
             -- between q and r, choose the point that is furthest from p
-            | otherwise = scanWith ((furthest [p, q]):r:rs) ps
+            | otherwise = scanWith (furthest [p, q]:r:rs) ps
             where myDir    = direction r q p
                   furthest = minimumBy (descCompareDist r)
           scanWith done _  = done
@@ -108,21 +105,21 @@ grahamScan xs =
 
 -- convert tuple to Point2D
 t2p :: [(Double, Double)] -> [Point2D]
-t2p [] = []
-t2p (t:ts) = (Point2D (fst t) (snd t)) : (t2p ts)
+t2p = map (\t -> (Point2D (fst t) (snd t)))
 
 -- convert Point2D to tuple
 p2t :: [Point2D] -> [(Double, Double)]
-p2t [] = []
-p2t (t:ts) = (x t, y t) : (p2t ts)
+p2t = map (\t -> (x t, y t))
 
 -- pretty-print tuples
+printTuples :: [(Double, Double)] -> String
 printTuples [] = ""
-printTuples (t:ts) = (show (fst t)) ++ "\t" ++ (show (snd t)) ++ "\n" ++ (printTuples ts)
+printTuples (t:ts) = show (fst t) ++ "\t" ++ show (snd t) ++ "\n" ++ printTuples ts
 
 
 -- TEST CASES -------------------------------------------
 -- A list of tuples where first elemtn is input, and second is expected output
+testCases :: [([(Double,Double)],[(Double,Double)])]
 testCases =
     [([],[]),
 
@@ -144,15 +141,16 @@ testCases =
      ([(-3,1),(-4,1),(-1,4),(0,0),(2,2),(-1,3),(-1,2),(1,0),(3,-1),(-1,-1)],
       [(-4,1),(-1,4),(2,2),(3,-1),(-1,-1)])]
 
+runTests :: [String]
 runTests = checkTestCases testCases
     where checkTestCases []     = []
-          checkTestCases (x:xs) =
-            (assertSameList expected actual):(checkTestCases xs)
-            where expected         = snd x
-                  actual           = grahamScanTuples (fst x)
+          checkTestCases (myX:xs) =
+            assertSameList expected actual:checkTestCases xs
+            where expected         = snd myX
+                  actual           = grahamScanTuples (fst myX)
                   grahamScanTuples = p2t . grahamScan . t2p
-                  assertSameList exp act
-                    | (sort exp) == (sort act) = "Passed"
+                  assertSameList myExp myAct
+                    | sort myExp == sort myAct = "Passed"
                     | otherwise                =
-                        let str = "Expected:\n" ++ (printTuples exp) ++ "\nActual:\n" ++ (printTuples act)
+                        let str = "Expected:\n" ++ printTuples myExp ++ "\nActual:\n" ++ printTuples myAct
                         in error str
