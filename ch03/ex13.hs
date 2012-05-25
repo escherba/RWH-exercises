@@ -5,7 +5,7 @@
 -- (sorts a set of points lexicographically)
 -- CRLS has a very good exposition of Graham scan in Ch. 33.
 
-import Data.List ((\\), nub, sort, sortBy, minimumBy)
+import Data.List ((\\), nub, sort, sortBy, minimumBy, union)
 
 -- note that data constructors have to start with capital letters
 data Direction = Left_ | Right_ | Straight_ deriving (Eq)
@@ -84,9 +84,9 @@ pivotSort xs =
 
 -- This is the core of the algorithm
 grahamScan :: [Point2D] -> [Point2D]
-grahamScan []     = []
-grahamScan [p]    = [p]
-grahamScan xs =
+grahamScan []   = []
+grahamScan [p] = [p]
+grahamScan xs  =
     let (pStart:rStart:zs) = pivotSort xs
     in scanWith [rStart,pStart] zs
     where scanWith :: [Point2D] -> [Point2D] -> [Point2D]
@@ -113,19 +113,23 @@ p2t t = (x t, y t)
 grahamScanTuples :: [PointTuple] -> [PointTuple]
 grahamScanTuples = map p2t . grahamScan . map t2p
 
+-- {{{ For testing
+
 -- pretty-print tuples
 printTuples :: [PointTuple] -> String
-printTuples [] = ""
-printTuples (t:ts) = show (fst t) ++ "\t" ++ show (snd t) ++ "\n" ++ printTuples ts
+printTuples ts = unlines (map (\t -> show (fst t) ++ "\t" ++ show (snd t)) ts)
 
+-- Symmetric difference of sets (here represented as lists)
+-- Written as: P ∆ Q (unicode u2206)
+(-|-) :: Eq a => [a] -> [a] -> [a]
+(-|-) p q = (p \\ q) `union` (q \\ p)
 
 -- For use with QuickCheck: satisfy idempotence: a convex hull of a convex hull
--- must contain the same set of points.
+-- must be the same set of points.
 prop_isIdempotent :: [PointTuple] -> Bool
-prop_isIdempotent xs =
-    xsConv \\ xsConvp == [] && xsConvp \\ xsConv == []
+prop_isIdempotent xs = xsConv -|- xsConvConv == []
     where xsConv = grahamScanTuples xs
-          xsConvp = grahamScanTuples xsConv
+          xsConvConv = grahamScanTuples xsConv
 
 -- For use with QuickCheck: satisfy the following property: for any valid input,
 -- the output list must be a subset of the input list.
@@ -140,9 +144,9 @@ segments xs = zip xs (tail xs ++ [head xs])
 
 -- parea: find area of a polygon
 parea :: [PointTuple] -> Double
-parea [] = 0.0
+parea []   = 0.0
 parea [_] = 0.0
-parea xs = 0.5 * abs (sum [x0 * y1 - x1 * y0 | ((x0, y0), (x1, y1)) <- segments xs])
+parea xs  = 0.5 * abs (sum [x0 * y1 - x1 * y0 | ((x0, y0), (x1, y1)) <- segments xs])
 
 -- For use with QuickCheck: satisfy the following property: for any valid input,
 -- the area of the polygon defined by the output must be greater or equal than
@@ -151,7 +155,6 @@ prop_areaIsGTE :: [PointTuple] -> Bool
 prop_areaIsGTE xs =
     let xsConv = grahamScanTuples xs
     in parea xsConv >= parea (take (length xsConv) xs)
-
 
 -- A list of tuples where first elemtn is input, and second is expected output
 testCases :: [([(Double,Double)],[(Double,Double)])]
@@ -180,13 +183,14 @@ testCases =
 -- Check our custom test cases
 runTests :: [String]
 runTests = checkTestCases testCases
-    where checkTestCases []     = []
+    where checkTestCases []        = []
           checkTestCases (myX:xs) =
             assertSameList expected actual:checkTestCases xs
             where expected         = snd myX
                   actual           = grahamScanTuples (fst myX)
                   assertSameList myExp myAct
                     | sort myExp == sort myAct = "Passed"
-                    | otherwise                =
-                        let str = "Expected:\n" ++ printTuples myExp ++ "\nActual:\n" ++ printTuples myAct
-                        in error str
+                    | otherwise               =
+                        error "Expected:\n" ++ printTuples myExp ++ "\nActual:\n" ++ printTuples myAct
+
+-- }}}
