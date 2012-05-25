@@ -5,11 +5,12 @@
 -- (sorts a set of points lexicographically)
 -- CRLS has a very good exposition of Graham scan in Ch. 33.
 
-import Data.List (nub, sort, sortBy, minimumBy)
+import Data.List ((\\), nub, sort, sortBy, minimumBy)
 
 -- note that data constructors have to start with capital letters
 data Direction = Left_ | Right_ | Straight_ deriving (Eq)
 data Point2D = Point2D { x, y :: Double } deriving (Eq, Show)
+type PointTuple = (Double, Double)
 
 -- get direction of turn formed by three points going from p1 to p2 to p3
 -- Do this by obtaining sign of the crossproduct of vectors (p1, p2) and
@@ -56,10 +57,7 @@ lowestYX p1 p2
 descCompareDist :: Point2D -> Point2D -> Point2D -> Ordering
 descCompareDist pStart = compareDist
     where compareDist :: Point2D -> Point2D -> Ordering
-          compareDist pA pB
-            | distA > distB = LT
-            | distA < distB = GT
-            | otherwise     = EQ
+          compareDist pA pB = compare distB distA
             where distA     = distanceP pA
                   distB     = distanceP pB
                   distanceP = distance pStart
@@ -104,20 +102,57 @@ grahamScan xs =
 
 
 -- convert tuple to Point2D
-t2p :: [(Double, Double)] -> [Point2D]
-t2p = map (\t -> (Point2D (fst t) (snd t)))
+t2p :: PointTuple -> Point2D
+t2p t = Point2D (fst t) (snd t)
 
 -- convert Point2D to tuple
-p2t :: [Point2D] -> [(Double, Double)]
-p2t = map (\t -> (x t, y t))
+p2t :: Point2D -> PointTuple
+p2t t = (x t, y t)
+
+-- perform Graham Scan algorithm on tuples instead of on Point2D lists
+grahamScanTuples :: [PointTuple] -> [PointTuple]
+grahamScanTuples = map p2t . grahamScan . map t2p
 
 -- pretty-print tuples
-printTuples :: [(Double, Double)] -> String
+printTuples :: [PointTuple] -> String
 printTuples [] = ""
 printTuples (t:ts) = show (fst t) ++ "\t" ++ show (snd t) ++ "\n" ++ printTuples ts
 
 
--- TEST CASES -------------------------------------------
+-- For use with QuickCheck: satisfy idempotence: a convex hull of a convex hull
+-- must contain the same set of points.
+prop_isIdempotent :: [PointTuple] -> Bool
+prop_isIdempotent xs =
+    xsConv \\ xsConvp == [] && xsConvp \\ xsConv == []
+    where xsConv = grahamScanTuples xs
+          xsConvp = grahamScanTuples xsConv
+
+-- For use with QuickCheck: satisfy the following property: for any valid input,
+-- the output list must be a subset of the input list.
+prop_isSubset :: [PointTuple] -> Bool
+prop_isSubset xs = grahamScanTuples xs \\ xs == []
+
+-- segments: given a list of points, return segments connecting the vertices in
+-- the given order
+segments :: [PointTuple] -> [(PointTuple, PointTuple)]
+segments [] = []
+segments xs = zip xs (tail xs ++ [head xs])
+
+-- parea: find area of a polygon
+parea :: [PointTuple] -> Double
+parea [] = 0.0
+parea [_] = 0.0
+parea xs = 0.5 * abs (sum [x0 * y1 - x1 * y0 | ((x0, y0), (x1, y1)) <- segments xs])
+
+-- For use with QuickCheck: satisfy the following property: for any valid input,
+-- the area of the polygon defined by the output must be greater or equal than
+-- the area of any other possible polygon defined by points in the input
+prop_areaIsGTE :: [PointTuple] -> Bool
+prop_areaIsGTE xs =
+    let xsConv = grahamScanTuples xs
+    in parea xsConv >= parea (take (length xsConv) xs)
+
+
 -- A list of tuples where first elemtn is input, and second is expected output
 testCases :: [([(Double,Double)],[(Double,Double)])]
 testCases =
@@ -141,6 +176,8 @@ testCases =
      ([(-3,1),(-4,1),(-1,4),(0,0),(2,2),(-1,3),(-1,2),(1,0),(3,-1),(-1,-1)],
       [(-4,1),(-1,4),(2,2),(3,-1),(-1,-1)])]
 
+
+-- Check our custom test cases
 runTests :: [String]
 runTests = checkTestCases testCases
     where checkTestCases []     = []
@@ -148,7 +185,6 @@ runTests = checkTestCases testCases
             assertSameList expected actual:checkTestCases xs
             where expected         = snd myX
                   actual           = grahamScanTuples (fst myX)
-                  grahamScanTuples = p2t . grahamScan . t2p
                   assertSameList myExp myAct
                     | sort myExp == sort myAct = "Passed"
                     | otherwise                =
