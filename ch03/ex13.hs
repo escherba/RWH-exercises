@@ -5,6 +5,9 @@
 -- (sorts a set of points lexicographically)
 -- CRLS has a very good exposition of Graham scan in Ch. 33.
 
+module Main where
+
+import Test.QuickCheck (quickCheck)
 import Data.List ((\\), nub, sort, sortBy, minimumBy, union)
 
 -- note that data constructors have to start with capital letters
@@ -76,7 +79,7 @@ descCompareCosX  pStart = compareCosX
                   cosXP = cosX pStart
 
 -- sorting using cosines here, but we could also sort using atan2() function
---  for example to find polar angle.
+-- for example to find polar angle.
 pivotSort :: [Point2D] -> [Point2D]
 pivotSort xs =
     let p = minimumBy lowestYX xs
@@ -90,12 +93,13 @@ grahamScan xs  =
     let (pStart:rStart:zs) = pivotSort xs
     in scanWith [rStart,pStart] zs
     where scanWith :: [Point2D] -> [Point2D] -> [Point2D]
-          scanWith (q:r:rs) (p:ps)
-            | myDir == Left_  = scanWith (p:q:r:rs) ps
-            -- backtrack by one element
-            | myDir == Right_ = scanWith (r:rs) (p:ps)
-            -- between q and r, choose the point that is furthest from p
-            | otherwise = scanWith (furthest [p, q]:r:rs) ps
+          scanWith candidates@(q:r:rs) rest@(p:ps)
+            -- Left turn: prepend element to candidates
+            | myDir == Left_  = scanWith (p:candidates) ps
+            -- Right turn: backtrack by one element
+            | myDir == Right_ = scanWith (r:rs) rest
+            -- Straight line: between q and r, choose the point that is furthest from p
+            | otherwise = scanWith (furthest [p, q] :r:rs) ps
             where myDir    = direction r q p
                   furthest = minimumBy (descCompareDist r)
           scanWith done _  = done
@@ -136,6 +140,11 @@ prop_isIdempotent xs = xsConv -|- xsConvConv == []
 prop_isSubset :: [PointTuple] -> Bool
 prop_isSubset xs = grahamScanTuples xs \\ xs == []
 
+-- For use with QuickCheck: satisfy the following property: output must always
+-- be the same no matter what order the points come in.
+prop_orderIndependent :: [PointTuple] -> Bool
+prop_orderIndependent xs = grahamScanTuples xs -|- grahamScanTuples (sort xs) == []
+
 -- segments: given a list of points, return segments connecting the vertices in
 -- the given order
 segments :: [PointTuple] -> [(PointTuple, PointTuple)]
@@ -149,12 +158,14 @@ parea [_] = 0.0
 parea xs  = 0.5 * abs (sum [x0 * y1 - x1 * y0 | ((x0, y0), (x1, y1)) <- segments xs])
 
 -- For use with QuickCheck: satisfy the following property: for any valid input,
--- the area of the polygon defined by the output must be greater or equal than
--- the area of any other possible polygon defined by points in the input
+-- the area of the convex hull of all points must be greater or equal than the
+-- area of a convex hull of a subset of the points (in this case, we chose the
+-- number of points in the subset to be equal to the number of points in the
+-- original convex hull).
 prop_areaIsGTE :: [PointTuple] -> Bool
 prop_areaIsGTE xs =
     let xsConv = grahamScanTuples xs
-    in parea xsConv >= parea (take (length xsConv) xs)
+    in parea xsConv >= parea (grahamScanTuples (take (length xsConv) xs))
 
 -- A list of tuples where first elemtn is input, and second is expected output
 testCases :: [([(Double,Double)],[(Double,Double)])]
@@ -179,18 +190,27 @@ testCases =
      ([(-3,1),(-4,1),(-1,4),(0,0),(2,2),(-1,3),(-1,2),(1,0),(3,-1),(-1,-1)],
       [(-4,1),(-1,4),(2,2),(3,-1),(-1,-1)])]
 
+-- OK/Fail plus string
+type TestResult = (Bool, String)
 
 -- Check our custom test cases
-runTests :: [String]
-runTests = checkTestCases testCases
-    where checkTestCases []        = []
-          checkTestCases (myX:xs) =
-            assertSameList expected actual:checkTestCases xs
-            where expected         = snd myX
-                  actual           = grahamScanTuples (fst myX)
-                  assertSameList myExp myAct
-                    | sort myExp == sort myAct = "Passed"
-                    | otherwise               =
-                        error "Expected:\n" ++ printTuples myExp ++ "\nActual:\n" ++ printTuples myAct
+checkTestCases :: IO ()
+checkTestCases = mapM_ doOneCase testCases
+    where doOneCase myX = assertSameList (snd myX) (grahamScanTuples (fst myX))
+          assertSameList expected actual
+            | sort expected == sort actual = putStrLn "Passed"
+            | otherwise                   =
+                putStrLn ("Failed. Expected:\n" ++ printTuples expected ++ "\nActual:\n" ++ printTuples actual)
+
+-- another property that a scan must satisfy is that the output must remain the
+-- same regardless of which order the points are in. TODO: write a test that
+-- takes an input list of points and compares the output from the list in an
+-- unsorted form with the output from the list in sorted form.
+runTests :: IO ()
+runTests = do checkTestCases
+              quickCheck prop_isIdempotent
+              quickCheck prop_isSubset
+              quickCheck prop_areaIsGTE
+              quickCheck prop_orderIndependent
 
 -- }}}
