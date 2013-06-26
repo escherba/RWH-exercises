@@ -91,25 +91,26 @@ grahamScan []   = []
 grahamScan [p] = [p]
 grahamScan xs  =
     let (pStart:rStart:zs) = pivotSort xs
-    in scanWith [rStart,pStart] zs
+                             in scanWith [rStart,pStart] zs
     where scanWith :: [Point2D] -> [Point2D] -> [Point2D]
           scanWith candidates@(q:r:rs) rest@(p:ps)
             -- Left turn: prepend element to candidates
             | myDir == Left_  = scanWith (p:candidates) ps
+            -- Straight line: between q and r, choose the point that is furthest from p
             -- Right turn: backtrack by one element
             | myDir == Right_ = scanWith (r:rs) rest
-            -- Straight line: between q and r, choose the point that is furthest from p
             | otherwise = scanWith (furthest [p, q] :r:rs) ps
-            where myDir    = direction r q p
-                  furthest = minimumBy (descCompareDist r)
+              where myDir    = direction r q p
+                    furthest = minimumBy (descCompareDist r)
           scanWith done _  = done
 
 
 -- convert tuple to Point2D
 t2p :: PointTuple -> Point2D
-t2p t = Point2D (fst t) (snd t)
+t2p (pX, pY) = Point2D pX pY
 
--- convert Point2D to tuple
+-- convert Point2D to tuple. Alternative version:
+-- p2t (Point2D {x = pX, y = pY}) = (pX, pY)
 p2t :: Point2D -> PointTuple
 p2t t = (x t, y t)
 
@@ -128,22 +129,27 @@ printTuples ts = unlines (map (\t -> show (fst t) ++ "\t" ++ show (snd t)) ts)
 (-|-) :: Eq a => [a] -> [a] -> [a]
 (-|-) p q = (p \\ q) `union` (q \\ p)
 
+-- Compare two lists for whether they consist of same elements (regardless of
+-- order). Returns true if both sets are empty.
+isSameSetAs :: Eq a => [a] -> [a] -> Bool
+isSameSetAs p q = null (p -|- q)
+
 -- For use with QuickCheck: satisfy idempotence: a convex hull of a convex hull
 -- must be the same set of points.
 prop_isIdempotent :: [PointTuple] -> Bool
-prop_isIdempotent xs = xsConv -|- xsConvConv == []
+prop_isIdempotent xs = xsConv `isSameSetAs` xsConvConv
     where xsConv = grahamScanTuples xs
           xsConvConv = grahamScanTuples xsConv
 
 -- For use with QuickCheck: satisfy the following property: for any valid input,
 -- the output list must be a subset of the input list.
 prop_isSubset :: [PointTuple] -> Bool
-prop_isSubset xs = grahamScanTuples xs \\ xs == []
+prop_isSubset xs = null (grahamScanTuples xs \\ xs)
 
 -- For use with QuickCheck: satisfy the following property: output must always
 -- be the same no matter what order the points come in.
 prop_orderIndependent :: [PointTuple] -> Bool
-prop_orderIndependent xs = grahamScanTuples xs -|- grahamScanTuples (sort xs) == []
+prop_orderIndependent xs = grahamScanTuples xs `isSameSetAs` grahamScanTuples (sort xs)
 
 -- segments: given a list of points, return segments connecting the vertices in
 -- the given order
@@ -198,8 +204,8 @@ checkTestCases :: IO ()
 checkTestCases = mapM_ doOneCase testCases
     where doOneCase myX = assertSameList (snd myX) (grahamScanTuples (fst myX))
           assertSameList expected actual
-            | sort expected == sort actual = putStrLn "Passed"
-            | otherwise                   =
+            | expected `isSameSetAs` actual = putStrLn "Passed"
+            | otherwise                     =
                 putStrLn ("Failed. Expected:\n" ++ printTuples expected ++ "\nActual:\n" ++ printTuples actual)
 
 -- another property that a scan must satisfy is that the output must remain the
